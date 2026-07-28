@@ -1,0 +1,19 @@
+{
+  "name": "paradox-arena",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @paradox/web",
+    "build": "npm run build --workspace @paradox/simulation && npm run build --workspace @paradox/web",
+    "test": "npm run test --workspace @paradox/simulation",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
