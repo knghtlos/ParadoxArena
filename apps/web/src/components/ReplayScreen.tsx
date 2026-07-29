@@ -2,15 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { createGame, runReplay, type Replay } from "@paradox/simulation";
 import { ArenaCanvas } from "../game/ArenaCanvas";
 import { useI18n } from "../i18n";
+import type { VisualTheme } from "../theme";
 
 interface Props {
   replays: Replay[];
+  visualTheme: VisualTheme;
   reducedMotion: boolean;
   onBack: () => void;
   onClear: () => void;
 }
 
-export function ReplayScreen({ replays, reducedMotion, onBack, onClear }: Props) {
+export function ReplayScreen({ replays, visualTheme, reducedMotion, onBack, onClear }: Props) {
   const { t, language, modeName } = useI18n();
   const [active, setActive] = useState<Replay>();
   const [index, setIndex] = useState(0);
@@ -39,6 +41,7 @@ export function ReplayScreen({ replays, reducedMotion, onBack, onClear }: Props)
             state={states[index]}
             resolving={index > 0}
             reducedMotion={reducedMotion}
+            visualTheme={visualTheme}
           />
         </div>
         <div className="replay-controls">

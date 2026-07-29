@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { Coord, GameState, PlayerId } from "@paradox/simulation";
+import { ARENA_THEMES, type VisualTheme } from "../theme";
 
 interface Props {
   state: GameState;
   reducedMotion: boolean;
+  visualTheme: VisualTheme;
 }
 
 interface Actor {
@@ -20,10 +22,16 @@ interface Actor {
   phase: number;
 }
 
-const BOARD_STEP = 1.5;
 const JUMP_MS = 720;
+const VIRTUAL_WIDTH = 900;
+const VIRTUAL_HEIGHT = 620;
+const TILE_WIDTH = 144;
+const TILE_HEIGHT = 78;
+const ORIGIN_X = VIRTUAL_WIDTH / 2;
+const ORIGIN_Y = 138;
+const WORLD_UNITS_PER_PIXEL = 8.6 / VIRTUAL_HEIGHT;
 
-export function CharacterStage({ state, reducedMotion }: Props) {
+export function CharacterStage({ state, reducedMotion, visualTheme }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const actorsRef = useRef<Record<PlayerId, Actor> | undefined>(undefined);
   const animationRef = useRef(0);
@@ -56,8 +64,9 @@ export function CharacterStage({ state, reducedMotion }: Props) {
     rim.position.set(5, 1, 5);
     scene.add(rim);
 
-    const p1 = createAvatar(0x51f0dc, 0x13252a, -0.12);
-    const p2 = createAvatar(0xff6275, 0x2b151c, 0.12);
+    const theme = ARENA_THEMES[visualTheme];
+    const p1 = createAvatar(theme.playerAccent, theme.botShell, -0.12);
+    const p2 = createAvatar(theme.rivalAccent, theme.rivalShell, 0.12);
     scene.add(p1.group, p2.group);
 
     const actors: Record<PlayerId, Actor> = {
@@ -99,7 +108,7 @@ export function CharacterStage({ state, reducedMotion }: Props) {
       renderer.domElement.remove();
       actorsRef.current = undefined;
     };
-  }, []);
+  }, [visualTheme]);
 
   useEffect(() => {
     const actors = actorsRef.current;
@@ -149,10 +158,11 @@ function makeActor(
 function createAvatar(accent: number, shell: number, lean: number) {
   const group = new THREE.Group();
   group.rotation.z = lean;
+  const darkShell = shadeColor(shell, 0.28);
   const materials = [
-    new THREE.MeshStandardMaterial({ color: shell, roughness: 0.28, metalness: 0.72, emissive: accent, emissiveIntensity: 0.08 }),
+    new THREE.MeshStandardMaterial({ color: shell, roughness: 0.22, metalness: 0.45, emissive: darkShell, emissiveIntensity: 0.08 }),
     new THREE.MeshStandardMaterial({ color: accent, roughness: 0.18, metalness: 0.35, emissive: accent, emissiveIntensity: 0.55 }),
-    new THREE.MeshStandardMaterial({ color: 0xeaffff, roughness: 0.12, metalness: 0.15, emissive: accent, emissiveIntensity: 0.22 })
+    new THREE.MeshStandardMaterial({ color: 0x071018, roughness: 0.12, metalness: 0.15, emissive: accent, emissiveIntensity: 0.22 })
   ];
 
   const pelvis = mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.18, 8), materials[0], 0, 0.26, 0);
@@ -200,7 +210,15 @@ function mesh<T extends THREE.BufferGeometry, M extends THREE.Material>(
 }
 
 function coordToWorld(coord: Coord): THREE.Vector3 {
-  return new THREE.Vector3((coord.col - 2) * BOARD_STEP, (2 - coord.row) * BOARD_STEP, 0);
+  const screen = {
+    x: ORIGIN_X + (coord.col - coord.row) * (TILE_WIDTH / 2),
+    y: ORIGIN_Y + (coord.col + coord.row) * (TILE_HEIGHT / 2)
+  };
+  return new THREE.Vector3(
+    (screen.x - VIRTUAL_WIDTH / 2) * WORLD_UNITS_PER_PIXEL,
+    (VIRTUAL_HEIGHT / 2 - screen.y) * WORLD_UNITS_PER_PIXEL,
+    0
+  );
 }
 
 function animateActor(actor: Actor, elapsed: number, now: number, reducedMotion: boolean): void {
@@ -225,7 +243,8 @@ function animateActor(actor: Actor, elapsed: number, now: number, reducedMotion:
     if (sinceLanding >= 0 && sinceLanding < 360) {
       const progress = sinceLanding / 360;
       actor.impact.visible = true;
-      actor.impact.scale.setScalar(1 + progress * 3.8);
+      const spread = 1 + progress * 3.8;
+      actor.impact.scale.set(spread, spread * 0.46, spread);
       (actor.impact.material as THREE.MeshBasicMaterial).opacity = (1 - progress) * 0.75;
     } else {
       actor.impact.visible = false;
@@ -249,4 +268,11 @@ function disposeActor(actor: Actor): void {
   for (const material of actor.materials) material.dispose();
   (actor.halo.material as THREE.Material).dispose();
   (actor.impact.material as THREE.Material).dispose();
+}
+
+function shadeColor(color: number, factor: number): number {
+  const red = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
+  const green = Math.max(0, Math.min(255, Math.round(((color >> 8) & 0xff) * factor)));
+  const blue = Math.max(0, Math.min(255, Math.round((color & 0xff) * factor)));
+  return (red << 16) | (green << 8) | blue;
 }

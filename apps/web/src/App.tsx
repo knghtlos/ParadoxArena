@@ -1,8 +1,14 @@
-import { lazy, Suspense, useCallback, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import type { Replay, Ruleset } from "@paradox/simulation";
 import { Home } from "./components/Home";
 import { clearReplays, loadReplays, saveReplay } from "./storage";
 import { useI18n } from "./i18n";
+import {
+  VISUAL_THEME_STORAGE_KEY,
+  applyVisualTheme,
+  getInitialVisualTheme,
+  type VisualTheme
+} from "./theme";
 
 const MatchScreen = lazy(() =>
   import("./components/MatchScreen").then((module) => ({ default: module.MatchScreen }))
@@ -29,6 +35,7 @@ export function App() {
   const [screen, setScreen] = useState<Screen>(initialScreen);
   const [matchInstance, setMatchInstance] = useState(0);
   const [replays, setReplays] = useState<Replay[]>(loadReplays);
+  const [visualTheme, setVisualTheme] = useState<VisualTheme>(getInitialVisualTheme);
   const [reducedMotion, setReducedMotion] = useState(
     () => localStorage.getItem("paradox-arena:reduced-motion") === "true"
       || window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -44,6 +51,16 @@ export function App() {
     localStorage.setItem("paradox-arena:reduced-motion", String(value));
   };
 
+  const handleVisualTheme = (value: VisualTheme) => {
+    setVisualTheme(value);
+    localStorage.setItem(VISUAL_THEME_STORAGE_KEY, value);
+    applyVisualTheme(value);
+  };
+
+  useEffect(() => {
+    applyVisualTheme(visualTheme);
+  }, [visualTheme]);
+
   if (screen.name === "match") {
     return (
       <Suspense fallback={<LoadingScreen />}>
@@ -51,8 +68,10 @@ export function App() {
           key={`${screen.ruleset}-${screen.tutorial}-${matchInstance}`}
           ruleset={screen.ruleset}
           tutorial={screen.tutorial}
+          visualTheme={visualTheme}
           reducedMotion={reducedMotion}
           onReducedMotionChange={handleMotion}
+          onVisualThemeChange={handleVisualTheme}
           onExit={() => setScreen({ name: "home" })}
           onRestart={() => setMatchInstance((value) => value + 1)}
           onReplaySaved={handleSave}
@@ -66,6 +85,7 @@ export function App() {
       <Suspense fallback={<LoadingScreen />}>
         <ReplayScreen
           replays={replays}
+          visualTheme={visualTheme}
           reducedMotion={reducedMotion}
           onBack={() => setScreen({ name: "home" })}
           onClear={() => {
@@ -80,6 +100,8 @@ export function App() {
   return (
     <Home
       replayCount={replays.length}
+      visualTheme={visualTheme}
+      onVisualThemeChange={handleVisualTheme}
       onPlay={(ruleset, tutorial = false) => setScreen({ name: "match", ruleset, tutorial })}
       onReplays={() => setScreen({ name: "replays" })}
     />

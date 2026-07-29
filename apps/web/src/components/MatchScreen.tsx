@@ -9,17 +9,22 @@ import {
   type Coord,
   type GameEvent,
   type GameState,
+  type NodeKind,
   type Replay,
   type Ruleset,
   type TurnIntents
 } from "@paradox/simulation";
 import { ArenaCanvas } from "../game/ArenaCanvas";
 import { LanguageSwitch, useI18n } from "../i18n";
+import type { VisualTheme } from "../theme";
+import { ThemeSwitch } from "./ThemeSwitch";
 
 interface Props {
   ruleset: Ruleset;
   tutorial: boolean;
+  visualTheme: VisualTheme;
   reducedMotion: boolean;
+  onVisualThemeChange: (theme: VisualTheme) => void;
   onReducedMotionChange: (value: boolean) => void;
   onExit: () => void;
   onRestart: () => void;
@@ -31,7 +36,9 @@ type Phase = "selecting" | "resolving" | "ended";
 export function MatchScreen({
   ruleset,
   tutorial,
+  visualTheme,
   reducedMotion,
+  onVisualThemeChange,
   onReducedMotionChange,
   onExit,
   onRestart,
@@ -121,17 +128,28 @@ export function MatchScreen({
     <main className="match-shell">
       <header className="match-header">
         <button className="icon-button" onClick={onExit} aria-label={t("common.back")}>←</button>
-        <div className="match-id">
-          <p className="eyebrow">{tutorial ? t("match.training") : t("match.local")}</p>
-          <strong>{modeName(ruleset).toUpperCase()} // {t("common.turn")} {String(game.turn).padStart(2, "0")}</strong>
+        <div className="match-id match-brandbar">
+          <strong>PARADOX <span>ARENA</span></strong>
+          <nav aria-label="Arena">
+            <span>{modeName(ruleset).toUpperCase()}</span>
+            <span>{t("common.turn")} {String(game.turn).padStart(2, "0")}</span>
+          </nav>
         </div>
         <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label={t("match.settings")}>⌁</button>
       </header>
 
       <section className="combat-grid">
-        <PlayerPanel side="rival" name={t("match.unitName")} state={game.players.p2} />
+        <PlayerPanel side="player" name="Paradox_7" state={game.players.p1} />
 
         <div className="arena-stage">
+          <BattleScorebar
+            player={game.players.p1}
+            rival={game.players.p2}
+            playerName="Paradox_7"
+            rivalName="ZeroCool"
+            remaining={remaining}
+            phase={phase}
+          />
           <div className={`pulse-clock ${remaining < 700 ? "urgent" : ""}`}>
             <div>
               <span>{phase === "selecting" ? (remaining / 1000).toFixed(1) : "SYNC"}</span>
@@ -153,12 +171,13 @@ export function MatchScreen({
             selected={selected}
             resolving={phase === "resolving"}
             reducedMotion={reducedMotion}
+            visualTheme={visualTheme}
             onSelect={handleSelect}
           />
           {tutorial && prompt && <div className="tutorial-callout"><span>{t("match.guide")}</span>{prompt}</div>}
         </div>
 
-        <PlayerPanel side="player" name={t("match.guestName")} state={game.players.p1} />
+        <PlayerPanel side="rival" name="ZeroCool" state={game.players.p2} />
       </section>
 
       <section className="command-deck">
@@ -183,6 +202,7 @@ export function MatchScreen({
             <small>{selected ? `${selected.row + 1}.${selected.col + 1} // ${t("match.changeable")}` : t("match.safeSelect")}</small>
           </div>
         </div>
+        <AbilityDock selectedNode={selectedCell?.node} />
         <EventFeed events={events} />
       </section>
 
@@ -213,6 +233,7 @@ export function MatchScreen({
               <p className="eyebrow">{t("match.accessibility")}</p>
               <h2>{t("match.settings")}</h2>
             </div>
+            <ThemeSwitch value={visualTheme} onChange={onVisualThemeChange} />
             <LanguageSwitch />
             <label className="toggle-row">
               <span><strong>{t("match.reducedMotion")}</strong><small>{t("match.reducedMotionDesc")}</small></span>
@@ -227,6 +248,57 @@ export function MatchScreen({
         </div>
       )}
     </main>
+  );
+}
+
+function BattleScorebar({
+  player,
+  rival,
+  playerName,
+  rivalName,
+  remaining,
+  phase
+}: {
+  player: GameState["players"]["p1"];
+  rival: GameState["players"]["p1"];
+  playerName: string;
+  rivalName: string;
+  remaining: number;
+  phase: Phase;
+}) {
+  const timer = phase === "selecting" ? (remaining / 1000).toFixed(1) : "SYNC";
+  return (
+    <div className="battle-scorebar" aria-hidden="true">
+      <div className="battle-score player-score">
+        <span className="score-bot" />
+        <strong>{player.integrity}</strong>
+        <small>{playerName}</small>
+      </div>
+      <div className="battle-timer">{timer}</div>
+      <div className="battle-score rival-score">
+        <strong>{rival.integrity}</strong>
+        <small>{rivalName}</small>
+        <span className="score-bot" />
+      </div>
+    </div>
+  );
+}
+
+const LOADOUT: NodeKind[] = ["pulse", "shift", "ripple", "anchor"];
+
+function AbilityDock({ selectedNode }: { selectedNode?: NodeKind }) {
+  const { t, nodeSummary } = useI18n();
+  return (
+    <div className="ability-dock" aria-label={t("match.abilities")}>
+      {LOADOUT.map((node, index) => (
+        <article className={`ability-card ${selectedNode === node ? "active" : ""}`} key={node}>
+          <span className={`ability-icon ability-${node}`} />
+          <strong>{NODE_DEFINITIONS[node].label}</strong>
+          <small>{nodeSummary(node)}</small>
+          <b>Lv.{index === 0 || index === 2 ? 2 : 1}</b>
+        </article>
+      ))}
+    </div>
   );
 }
 
