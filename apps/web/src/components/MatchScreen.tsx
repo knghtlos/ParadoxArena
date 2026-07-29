@@ -135,7 +135,12 @@ export function MatchScreen({
             <span>{t("common.turn")} {String(game.turn).padStart(2, "0")}</span>
           </nav>
         </div>
-        <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label={t("match.settings")}>⌁</button>
+        <div className="match-tools">
+          <span className="wallet-gems"><i>◆</i>1.240</span>
+          <span className="wallet-coins"><i>●</i>8.560</span>
+          <span className="header-bot" aria-hidden="true" />
+          <button className="icon-button" onClick={() => setSettingsOpen(true)} aria-label={t("match.settings")}>⚙</button>
+        </div>
       </header>
 
       <section className="combat-grid">
@@ -177,7 +182,7 @@ export function MatchScreen({
           {tutorial && prompt && <div className="tutorial-callout"><span>{t("match.guide")}</span>{prompt}</div>}
         </div>
 
-        <PlayerPanel side="rival" name="ZeroCool" state={game.players.p2} />
+        <PlayerPanel side="rival" name="ZeroCool" state={game.players.p2} selectedNode={selectedCell?.node} />
       </section>
 
       <section className="command-deck">
@@ -185,7 +190,7 @@ export function MatchScreen({
           <p className="eyebrow">{t("match.targetNode")}</p>
           {selectedCell ? (
             <>
-              <strong>{NODE_DEFINITIONS[selectedCell.node].label}</strong>
+              <strong>{t(`nodeName.${selectedCell.node}`)}</strong>
               <span>{nodeSummary(selectedCell.node)}</span>
             </>
           ) : (
@@ -202,7 +207,9 @@ export function MatchScreen({
             <small>{selected ? `${selected.row + 1}.${selected.col + 1} // ${t("match.changeable")}` : t("match.safeSelect")}</small>
           </div>
         </div>
-        <AbilityDock selectedNode={selectedCell?.node} />
+        <div className="mobile-ability-wrap">
+          <AbilityDock selectedNode={selectedCell?.node} />
+        </div>
         <EventFeed events={events} />
       </section>
 
@@ -266,18 +273,22 @@ function BattleScorebar({
   remaining: number;
   phase: Phase;
 }) {
-  const timer = phase === "selecting" ? (remaining / 1000).toFixed(1) : "SYNC";
+  const timer = phase === "selecting"
+    ? `00:${String(Math.max(0, Math.ceil(remaining / 1000))).padStart(2, "0")}`
+    : "SYNC";
+  const playerScore = Math.ceil(player.integrity / 4);
+  const rivalScore = Math.ceil(rival.integrity / 4);
   return (
     <div className="battle-scorebar" aria-hidden="true">
       <div className="battle-score player-score">
         <span className="score-bot" />
-        <strong>{player.integrity}</strong>
-        <small>{playerName}</small>
+        <strong>{playerScore}</strong>
+        <span className="score-identity"><small>{playerName}</small><em>1250</em></span>
       </div>
       <div className="battle-timer">{timer}</div>
       <div className="battle-score rival-score">
-        <strong>{rival.integrity}</strong>
-        <small>{rivalName}</small>
+        <strong>{rivalScore}</strong>
+        <span className="score-identity"><small>{rivalName}</small><em>980</em></span>
         <span className="score-bot" />
       </div>
     </div>
@@ -293,7 +304,7 @@ function AbilityDock({ selectedNode }: { selectedNode?: NodeKind }) {
       {LOADOUT.map((node, index) => (
         <article className={`ability-card ${selectedNode === node ? "active" : ""}`} key={node}>
           <span className={`ability-icon ability-${node}`} />
-          <strong>{NODE_DEFINITIONS[node].label}</strong>
+          <strong>{t(`nodeName.${node}`)}</strong>
           <small>{nodeSummary(node)}</small>
           <b>Lv.{index === 0 || index === 2 ? 2 : 1}</b>
         </article>
@@ -305,11 +316,13 @@ function AbilityDock({ selectedNode }: { selectedNode?: NodeKind }) {
 function PlayerPanel({
   side,
   name,
-  state
+  state,
+  selectedNode
 }: {
   side: "player" | "rival";
   name: string;
   state: GameState["players"]["p1"];
+  selectedNode?: NodeKind;
 }) {
   const { t } = useI18n();
   const ratio = Math.max(0, state.integrity / 100);
@@ -326,6 +339,45 @@ function PlayerPanel({
         <span>{t("match.resonance")} <b>{state.resonance}/3</b></span>
         <span>{t("match.charge")} <b>{state.charge}/3</b></span>
       </div>
+      {side === "player" ? (
+        <div className="desktop-arena-menu" aria-hidden="true">
+          <strong>GIOCA</strong>
+          <span><i>⬡</i><b>BATTLE ARENA</b><small>Tutti contro tutti</small></span>
+          <span><i>✦</i><b>EVENTI SPECIALI</b><small>Modalità a tempo</small></span>
+          <span><i>♜</i><b>CLASSIFICHE</b><small>Scala la classifica</small></span>
+          <span><i>✓</i><b>MISSIONI</b><small>Completa e guadagna</small></span>
+        </div>
+      ) : (
+        <div className="desktop-rival-rail" aria-hidden="true">
+          <p>{t("match.nextRule")}</p>
+          <strong>CAMPI MAGNETICI</strong>
+          <small>I magneti attirano i bot verso di loro.</small>
+          <b>00:15</b>
+        </div>
+      )}
+      {side === "player" && (
+        <div className="desktop-event-card" aria-hidden="true">
+          <small>NUOVO EVENTO!</small>
+          <strong>CAOS MAGNETICO</strong>
+          <p>Regole pazze.<br />Premi epici.</p>
+          <span>◷ 2g 18h</span>
+          <i className="event-card-bot" />
+        </div>
+      )}
+      {side === "rival" && (
+        <div className="desktop-ability-rail">
+          <p>{t("match.abilities")}</p>
+          <AbilityDock selectedNode={selectedNode} />
+          <div className="rail-resource">
+            <span><i className="guard-resource" /><b>{state.guard}/100</b></span>
+            <em><i style={{ transform: `scaleX(${Math.min(1, state.guard / 100)})` }} /></em>
+          </div>
+          <div className="rail-resource">
+            <span><i className="energy-resource">ϟ</i><b>{state.charge * 24}/72</b></span>
+            <em><i style={{ transform: `scaleX(${state.charge / 3})` }} /></em>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

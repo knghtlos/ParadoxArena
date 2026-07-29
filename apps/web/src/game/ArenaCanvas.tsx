@@ -30,10 +30,9 @@ export function ArenaCanvas({ state, selected, resolving, reducedMotion, visualT
     const game = new Phaser.Game({
       type: Phaser.CANVAS,
       parent: parentRef.current,
-      width: 900,
-      height: 620,
-      transparent: false,
-      backgroundColor: "#071018",
+      width: 560,
+      height: 1025,
+      transparent: true,
       antialias: true,
       render: { pixelArt: false, roundPixels: false },
       scale: {

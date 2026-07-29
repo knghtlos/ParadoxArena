@@ -6,21 +6,32 @@ import {
   type Coord,
   type GameState
 } from "@paradox/simulation";
-import { ARENA_THEMES, type ArenaTheme, type VisualTheme } from "../theme";
+import type { VisualTheme } from "../theme";
 
-const SIZE = 5;
-const CANVAS_WIDTH = 900;
-const CANVAS_HEIGHT = 620;
-const TILE_WIDTH = 144;
-const TILE_HEIGHT = 78;
-const TILE_DEPTH = 18;
+const CANVAS_WIDTH = 560;
+const CANVAS_HEIGHT = 1025;
+const TILE_WIDTH = 86;
+const TILE_HEIGHT = 166;
 const ORIGIN_X = CANVAS_WIDTH / 2;
-const ORIGIN_Y = 138;
+const ORIGIN_Y = 174;
 
-interface IsoPoint {
+interface ArenaPoint {
   x: number;
   y: number;
 }
+
+interface PowerTileStyle {
+  color: number;
+  glyph: "arrow" | "bolt" | "shield" | "star";
+}
+
+const POWER_TILES: Record<number, PowerTileStyle> = {
+  2: { color: 0x42b9ff, glyph: "arrow" },
+  6: { color: 0xffbd43, glyph: "bolt" },
+  13: { color: 0x55c9ff, glyph: "shield" },
+  18: { color: 0xd75cff, glyph: "star" },
+  22: { color: 0x4db8ff, glyph: "star" }
+};
 
 export class ArenaScene extends Phaser.Scene {
   private state?: GameState;
@@ -28,15 +39,12 @@ export class ArenaScene extends Phaser.Scene {
   private board?: Phaser.GameObjects.Container;
   private selectionHandler?: (coord: Coord) => void;
   private reducedMotion = false;
-  private language: "it" | "en" = "it";
-  private visualTheme: VisualTheme = "dark";
 
   constructor() {
     super("arena");
   }
 
   create(): void {
-    this.cameras.main.setBackgroundColor(toHexNumber(ARENA_THEMES[this.visualTheme].background));
     this.board = this.add.container(0, 0);
     if (this.state) this.renderBoard();
   }
@@ -49,14 +57,11 @@ export class ArenaScene extends Phaser.Scene {
     this.reducedMotion = value;
   }
 
-  setLanguage(language: "it" | "en"): void {
-    this.language = language;
-    if (this.board && this.state) this.renderBoard();
+  setLanguage(_language: "it" | "en"): void {
+    // The reference arena intentionally contains no written labels.
   }
 
-  setVisualTheme(theme: VisualTheme): void {
-    this.visualTheme = theme;
-    this.cameras.main.setBackgroundColor(toHexNumber(ARENA_THEMES[theme].background));
+  setVisualTheme(_theme: VisualTheme): void {
     if (this.board && this.state) this.renderBoard();
   }
 
@@ -68,275 +73,207 @@ export class ArenaScene extends Phaser.Scene {
     if (animate && !this.reducedMotion) {
       this.tweens.add({
         targets: this.board,
-        scaleX: { from: 0.985, to: 1 },
-        scaleY: { from: 0.985, to: 1 },
-        duration: 260,
-        ease: "Back.Out"
+        scaleX: { from: 0.992, to: 1 },
+        scaleY: { from: 0.992, to: 1 },
+        duration: 220,
+        ease: "Sine.Out"
       });
-      this.cameras.main.shake(80, 0.0025);
+      this.cameras.main.shake(70, 0.0015);
     }
   }
 
   private renderBoard(): void {
     if (!this.board || !this.state) return;
     this.board.removeAll(true);
+    this.drawEdgeShading();
 
-    this.drawStageBackdrop();
-
-    const orderedCells = [...this.state.cells].sort((a, b) => {
-      const aDepth = a.coord.row + a.coord.col;
-      const bDepth = b.coord.row + b.coord.col;
-      return aDepth - bDepth || a.coord.row - b.coord.row;
-    });
-
-    for (const cell of orderedCells) {
-      const center = coordToIso(cell.coord);
-      const points = tilePoints(center);
+    for (const cell of this.state.cells) {
+      const center = coordToArena(cell.coord);
+      const index = cell.coord.row * 5 + cell.coord.col;
       const definition = NODE_DEFINITIONS[cell.node];
-      const color = FAMILY_COLORS[definition.family];
+      const familyColor = FAMILY_COLORS[definition.family];
       const legal = !cell.void && cell.cooldown === 0;
-      const isSelected = Boolean(this.selected && sameCoord(this.selected, cell.coord));
+      const selected = Boolean(this.selected && sameCoord(this.selected, cell.coord));
+      const powerStyle = POWER_TILES[index];
       const graphic = this.add.graphics();
-      const theme = ARENA_THEMES[this.visualTheme];
-      const topColor = tileTopColor(cell.void, cell.unstable, color, theme);
-      const leftFace = [points[3], points[2], offset(points[2], 0, TILE_DEPTH), offset(points[3], 0, TILE_DEPTH)];
-      const rightFace = [points[2], points[1], offset(points[1], 0, TILE_DEPTH), offset(points[2], 0, TILE_DEPTH)];
+      const left = center.x - TILE_WIDTH / 2 + 3;
+      const top = center.y - TILE_HEIGHT / 2 + 3;
 
-      graphic.fillStyle(shadeColor(topColor, cell.void ? 0.48 : 0.58), cell.void ? 0.5 : 0.9);
-      graphic.fillPoints(leftFace, true);
-      graphic.fillStyle(shadeColor(topColor, cell.void ? 0.38 : 0.48), cell.void ? 0.45 : 0.95);
-      graphic.fillPoints(rightFace, true);
-      graphic.fillStyle(topColor, cell.void ? 0.55 : 1);
-      graphic.fillPoints(points, true);
-
+      // The 25 logical cells cover the complete inner floor. Their restrained
+      // outline keeps the detailed steel texture visible while making every
+      // valid destination immediately understandable.
+      graphic.fillStyle(legal ? 0x2e9bc7 : 0x26313e, legal ? 0.025 : 0.035);
+      graphic.fillRoundedRect(left, top, TILE_WIDTH - 6, TILE_HEIGHT - 6, 5);
       graphic.lineStyle(
-        isSelected ? 6 : cell.warned ? 4 : 2,
-        isSelected ? (theme.key === "dark" ? 0xf2ffff : 0xff4fa3) : cell.warned ? 0xffd166 : color,
-        legal ? 0.9 : 0.22
+        selected ? 3 : 1,
+        selected ? 0x79e7ff : legal ? 0x7194ad : 0x47515d,
+        selected ? 0.96 : legal ? 0.27 : 0.14
       );
-      graphic.strokePoints(points, true);
-      graphic.lineStyle(1, mixColor(color, 0xffffff, 0.38), legal ? 0.2 : 0.08);
-      graphic.lineBetween(points[0].x, points[0].y, points[1].x, points[1].y);
+      graphic.strokeRoundedRect(left, top, TILE_WIDTH - 6, TILE_HEIGHT - 6, 5);
 
-      drawFamilyGlyph(graphic, definition.family, center, color, legal ? 0.54 : 0.18);
+      if (!cell.void && (powerStyle || selected || cell.warned)) {
+        drawPowerTile(
+          graphic,
+          center,
+          powerStyle ?? { color: familyColor, glyph: familyGlyph(definition.family) },
+          legal,
+          selected
+        );
+      }
 
-      if (isSelected) {
-        graphic.lineStyle(3, theme.playerAccent, 0.38);
-        graphic.strokeEllipse(center.x, center.y + 2, TILE_WIDTH * 0.86, TILE_HEIGHT * 0.66);
-      }
-      if (cell.warned) {
-        graphic.lineStyle(2, 0xffd166, 0.5);
-        graphic.strokeEllipse(center.x, center.y + 2, TILE_WIDTH * 0.74, TILE_HEIGHT * 0.56);
-      }
       if (cell.unstable) {
-        graphic.lineStyle(2, 0xff7f9a, 0.72);
-        graphic.lineBetween(center.x - 28, center.y - 8, center.x - 4, center.y + 4);
-        graphic.lineBetween(center.x - 4, center.y + 4, center.x - 18, center.y + 28);
-        graphic.lineBetween(center.x - 4, center.y + 4, center.x + 36, center.y + 12);
+        graphic.lineStyle(2, 0xff8b77, 0.76);
+        graphic.lineBetween(center.x - 21, center.y - 13, center.x - 4, center.y + 1);
+        graphic.lineBetween(center.x - 4, center.y + 1, center.x - 14, center.y + 24);
+        graphic.lineBetween(center.x - 4, center.y + 1, center.x + 25, center.y + 11);
       }
-      if (legal) {
-        graphic.setInteractive(new Phaser.Geom.Polygon(points), Phaser.Geom.Polygon.Contains);
-        graphic.on("pointerdown", () => this.selectionHandler?.({ ...cell.coord }));
-        graphic.on("pointerover", () => graphic.setAlpha(0.86));
-        graphic.on("pointerout", () => graphic.setAlpha(1));
-      }
+
       this.board.add(graphic);
 
-      if (!cell.void) {
-        const label = this.add
-          .text(center.x, center.y - 7, definition.label, {
+      if (legal) {
+        const hover = this.add.graphics();
+        hover.fillStyle(0x51cfff, 0.13);
+        hover.fillRoundedRect(left + 2, top + 2, TILE_WIDTH - 10, TILE_HEIGHT - 10, 5);
+        hover.lineStyle(2, 0x72e5ff, 0.76);
+        hover.strokeRoundedRect(left + 2, top + 2, TILE_WIDTH - 10, TILE_HEIGHT - 10, 5);
+        hover.setAlpha(0.001);
+        hover.setInteractive(
+          new Phaser.Geom.Rectangle(left, top, TILE_WIDTH - 6, TILE_HEIGHT - 6),
+          Phaser.Geom.Rectangle.Contains
+        );
+        hover.on("pointerdown", () => this.selectionHandler?.({ ...cell.coord }));
+        hover.on("pointerover", () => hover.setAlpha(1));
+        hover.on("pointerout", () => hover.setAlpha(0.001));
+        this.board.add(hover);
+      }
+
+      if (!cell.void && cell.cooldown > 0) {
+        const badge = this.add.graphics();
+        badge.fillStyle(0x06101b, 0.96);
+        badge.fillRoundedRect(center.x + 23, center.y - 39, 27, 23, 6);
+        badge.lineStyle(1, familyColor, 0.9);
+        badge.strokeRoundedRect(center.x + 23, center.y - 39, 27, 23, 6);
+        const cooldown = this.add
+          .text(center.x + 36.5, center.y - 27.5, String(cell.cooldown), {
             fontFamily: "Chakra Petch, Arial, sans-serif",
-            fontSize: "14px",
+            fontSize: "12px",
             fontStyle: "bold",
-            color: legal ? theme.text : theme.mutedText,
-            align: "center"
+            color: "#ecfbff"
           })
           .setOrigin(0.5);
-        label.setShadow(0, 2, theme.key === "dark" ? "#02060a" : "#ffffff", 5, true, true);
-
-        const family = this.add
-          .text(center.x, center.y + 13, this.familyLabel(definition.family), {
-            fontFamily: "Chakra Petch, Arial, sans-serif",
-            fontSize: "8px",
-            color: toHex(color),
-            letterSpacing: 1.4
-          })
-          .setOrigin(0.5);
-        this.board.add([label, family]);
-
-        if (cell.cooldown > 0) {
-          const badge = this.add.graphics();
-          badge.fillStyle(theme.key === "dark" ? 0xf2ffff : 0xfff7fb, 0.92);
-          badge.fillRoundedRect(center.x + 34, center.y - 34, 28, 22, 6);
-          badge.lineStyle(1, color, 0.62);
-          badge.strokeRoundedRect(center.x + 34, center.y - 34, 28, 22, 6);
-          const cooldown = this.add
-            .text(center.x + 48, center.y - 23, String(cell.cooldown), {
-              fontFamily: "Chakra Petch, Arial, sans-serif",
-              fontSize: "13px",
-              fontStyle: "bold",
-              color: "#081019"
-            })
-            .setOrigin(0.5);
-          this.board.add([badge, cooldown]);
-        }
+        this.board.add([badge, cooldown]);
       }
     }
   }
 
-  private drawStageBackdrop(): void {
+  private drawEdgeShading(): void {
     if (!this.board) return;
-    const theme = ARENA_THEMES[this.visualTheme];
-
-    const backdrop = this.add.graphics();
-    backdrop.fillStyle(theme.background, 1);
-    backdrop.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    backdrop.lineStyle(1, theme.key === "dark" ? 0x183040 : 0xe7cfe4, 0.42);
-    for (let index = -7; index <= 7; index += 1) {
-      const x = ORIGIN_X + index * (TILE_WIDTH / 2);
-      backdrop.lineBetween(x - 220, 72, x + 260, 548);
-      backdrop.lineBetween(x + 220, 72, x - 260, 548);
-    }
-
-    const platformTop = [
-      { x: ORIGIN_X, y: 70 },
-      { x: ORIGIN_X + 382, y: 286 },
-      { x: ORIGIN_X, y: 542 },
-      { x: ORIGIN_X - 382, y: 286 }
-    ];
-    const platformBottom = platformTop.map((point) => offset(point, 0, 34));
-
-    backdrop.fillStyle(theme.platformLeft, 0.96);
-    backdrop.fillPoints([platformTop[3], platformTop[2], platformBottom[2], platformBottom[3]], true);
-    backdrop.fillStyle(theme.platformRight, 0.98);
-    backdrop.fillPoints([platformTop[2], platformTop[1], platformBottom[1], platformBottom[2]], true);
-    backdrop.fillStyle(theme.platformTop, 0.98);
-    backdrop.fillPoints(platformTop, true);
-
-    backdrop.lineStyle(3, theme.playerAccent, 0.5);
-    backdrop.lineBetween(platformTop[3].x, platformTop[3].y, platformTop[0].x, platformTop[0].y);
-    backdrop.lineStyle(3, theme.rivalAccent, 0.48);
-    backdrop.lineBetween(platformTop[0].x, platformTop[0].y, platformTop[1].x, platformTop[1].y);
-    backdrop.lineStyle(2, 0xffc857, 0.32);
-    backdrop.lineBetween(platformTop[2].x, platformTop[2].y, platformTop[1].x, platformTop[1].y);
-    backdrop.lineStyle(2, 0xa982ff, 0.34);
-    backdrop.lineBetween(platformTop[3].x, platformTop[3].y, platformTop[2].x, platformTop[2].y);
-
-    backdrop.lineStyle(1, theme.key === "dark" ? 0xeaf7f5 : 0x7c6e9e, theme.key === "dark" ? 0.08 : 0.16);
-    for (let index = 1; index < SIZE; index += 1) {
-      const left = coordToIso({ row: index, col: 0 });
-      const right = coordToIso({ row: index, col: SIZE - 1 });
-      const top = coordToIso({ row: 0, col: index });
-      const bottom = coordToIso({ row: SIZE - 1, col: index });
-      backdrop.lineBetween(left.x - TILE_WIDTH / 2, left.y, right.x + TILE_WIDTH / 2, right.y);
-      backdrop.lineBetween(top.x + TILE_WIDTH / 2, top.y, bottom.x - TILE_WIDTH / 2, bottom.y);
-    }
-
-    this.board.add(backdrop);
-  }
-
-  private familyLabel(family: "strike" | "guard" | "vector" | "circuit"): string {
-    if (this.language === "en") return family.toUpperCase();
-    return {
-      strike: "OFFESA",
-      guard: "DIFESA",
-      vector: "VETTORE",
-      circuit: "CIRCUITO"
-    }[family];
+    const shading = this.add.graphics();
+    shading.fillStyle(0x01050a, 0.28);
+    shading.fillRect(0, 0, CANVAS_WIDTH, 74);
+    shading.fillStyle(0x01050a, 0.18);
+    shading.fillRect(0, 938, CANVAS_WIDTH, CANVAS_HEIGHT - 938);
+    this.board.add(shading);
   }
 }
 
-function coordToIso(coord: Coord): IsoPoint {
+function coordToArena(coord: Coord): ArenaPoint {
   return {
-    x: ORIGIN_X + (coord.col - coord.row) * (TILE_WIDTH / 2),
-    y: ORIGIN_Y + (coord.col + coord.row) * (TILE_HEIGHT / 2)
+    x: ORIGIN_X + (coord.col - 2) * TILE_WIDTH,
+    y: ORIGIN_Y + coord.row * TILE_HEIGHT
   };
 }
 
-function tilePoints(center: IsoPoint): IsoPoint[] {
-  return [
-    { x: center.x, y: center.y - TILE_HEIGHT / 2 },
-    { x: center.x + TILE_WIDTH / 2, y: center.y },
-    { x: center.x, y: center.y + TILE_HEIGHT / 2 },
-    { x: center.x - TILE_WIDTH / 2, y: center.y }
-  ];
+function familyGlyph(
+  family: "strike" | "guard" | "vector" | "circuit"
+): PowerTileStyle["glyph"] {
+  if (family === "strike") return "bolt";
+  if (family === "guard") return "shield";
+  if (family === "vector") return "arrow";
+  return "star";
 }
 
-function offset(point: IsoPoint, x: number, y: number): IsoPoint {
-  return { x: point.x + x, y: point.y + y };
-}
-
-function tileTopColor(
-  voidCell: boolean,
-  unstable: boolean,
-  familyColor: number,
-  theme: ArenaTheme
-): number {
-  if (voidCell) return theme.voidCell;
-  const base = unstable ? theme.tileUnstable : theme.tileBase;
-  return mixColor(base, familyColor, theme.key === "dark" ? (unstable ? 0.28 : 0.18) : (unstable ? 0.18 : 0.1));
-}
-
-function drawFamilyGlyph(
+function drawPowerTile(
   graphic: Phaser.GameObjects.Graphics,
-  family: "strike" | "guard" | "vector" | "circuit",
-  center: IsoPoint,
+  center: ArenaPoint,
+  style: PowerTileStyle,
+  legal: boolean,
+  selected: boolean
+): void {
+  const alpha = legal ? 1 : 0.34;
+  const size = selected ? 78 : 70;
+  const half = size / 2;
+
+  graphic.fillStyle(style.color, 0.055 * alpha);
+  graphic.fillRoundedRect(center.x - half - 8, center.y - half - 8, size + 16, size + 16, 12);
+  graphic.fillStyle(style.color, 0.12 * alpha);
+  graphic.fillRoundedRect(center.x - half, center.y - half, size, size, 7);
+  graphic.lineStyle(selected ? 4 : 2, style.color, (selected ? 1 : 0.82) * alpha);
+  graphic.strokeRoundedRect(center.x - half, center.y - half, size, size, 7);
+  graphic.lineStyle(1, 0xdff8ff, 0.3 * alpha);
+  graphic.strokeRoundedRect(center.x - half + 4, center.y - half + 4, size - 8, size - 8, 5);
+
+  drawPowerGlyph(graphic, style.glyph, center, style.color, alpha);
+}
+
+function drawPowerGlyph(
+  graphic: Phaser.GameObjects.Graphics,
+  glyph: PowerTileStyle["glyph"],
+  center: ArenaPoint,
   color: number,
   alpha: number
 ): void {
-  graphic.lineStyle(3, color, alpha);
-  graphic.fillStyle(color, alpha);
-  if (family === "strike") {
-    graphic.lineBetween(center.x - 33, center.y + 20, center.x - 8, center.y + 3);
-    graphic.lineBetween(center.x - 8, center.y + 3, center.x - 22, center.y + 27);
-    graphic.lineBetween(center.x - 8, center.y + 3, center.x + 26, center.y - 10);
+  graphic.fillStyle(color, 0.95 * alpha);
+  graphic.lineStyle(5, color, 0.95 * alpha);
+
+  if (glyph === "arrow") {
+    graphic.fillRect(center.x - 5, center.y - 22, 10, 29);
+    graphic.fillTriangle(
+      center.x - 18,
+      center.y + 2,
+      center.x + 18,
+      center.y + 2,
+      center.x,
+      center.y + 23
+    );
     return;
   }
-  if (family === "guard") {
-    graphic.strokeEllipse(center.x - 28, center.y + 14, 24, 14);
-    graphic.lineBetween(center.x - 40, center.y + 14, center.x - 16, center.y + 14);
+
+  if (glyph === "bolt") {
+    graphic.fillPoints([
+      { x: center.x + 4, y: center.y - 27 },
+      { x: center.x - 17, y: center.y + 1 },
+      { x: center.x - 4, y: center.y + 1 },
+      { x: center.x - 10, y: center.y + 27 },
+      { x: center.x + 19, y: center.y - 8 },
+      { x: center.x + 5, y: center.y - 8 }
+    ], true);
     return;
   }
-  if (family === "vector") {
+
+  if (glyph === "shield") {
+    graphic.lineStyle(5, color, 0.95 * alpha);
     graphic.strokePoints([
-      { x: center.x - 37, y: center.y + 17 },
-      { x: center.x - 20, y: center.y + 8 },
-      { x: center.x - 3, y: center.y + 17 }
-    ], false);
-    graphic.strokePoints([
-      { x: center.x - 28, y: center.y + 27 },
-      { x: center.x - 11, y: center.y + 18 },
-      { x: center.x + 6, y: center.y + 27 }
-    ], false);
+      { x: center.x, y: center.y - 25 },
+      { x: center.x + 20, y: center.y - 14 },
+      { x: center.x + 16, y: center.y + 13 },
+      { x: center.x, y: center.y + 26 },
+      { x: center.x - 16, y: center.y + 13 },
+      { x: center.x - 20, y: center.y - 14 }
+    ], true);
     return;
   }
-  graphic.fillCircle(center.x - 34, center.y + 14, 3);
-  graphic.fillCircle(center.x - 16, center.y + 8, 3);
-  graphic.fillCircle(center.x + 2, center.y + 18, 3);
-  graphic.lineBetween(center.x - 34, center.y + 14, center.x - 16, center.y + 8);
-  graphic.lineBetween(center.x - 16, center.y + 8, center.x + 2, center.y + 18);
-}
 
-function mixColor(base: number, overlay: number, amount: number): number {
-  const inverse = 1 - amount;
-  const red = Math.round(((base >> 16) & 0xff) * inverse + ((overlay >> 16) & 0xff) * amount);
-  const green = Math.round(((base >> 8) & 0xff) * inverse + ((overlay >> 8) & 0xff) * amount);
-  const blue = Math.round((base & 0xff) * inverse + (overlay & 0xff) * amount);
-  return (red << 16) | (green << 8) | blue;
-}
-
-function shadeColor(color: number, factor: number): number {
-  const red = Math.max(0, Math.min(255, Math.round(((color >> 16) & 0xff) * factor)));
-  const green = Math.max(0, Math.min(255, Math.round(((color >> 8) & 0xff) * factor)));
-  const blue = Math.max(0, Math.min(255, Math.round((color & 0xff) * factor)));
-  return (red << 16) | (green << 8) | blue;
-}
-
-function toHex(color: number): string {
-  return `#${color.toString(16).padStart(6, "0")}`;
-}
-
-function toHexNumber(color: number): string {
-  return `#${color.toString(16).padStart(6, "0")}`;
+  const points: ArenaPoint[] = [];
+  for (let index = 0; index < 16; index += 1) {
+    const radius = index % 2 === 0 ? 25 : 9;
+    const angle = -Math.PI / 2 + (Math.PI * index) / 8;
+    points.push({
+      x: center.x + Math.cos(angle) * radius,
+      y: center.y + Math.sin(angle) * radius
+    });
+  }
+  graphic.fillPoints(points, true);
+  graphic.fillStyle(0xeafcff, 0.8 * alpha);
+  graphic.fillCircle(center.x, center.y, 5);
 }
