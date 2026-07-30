@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import type { Coord, GameState, PlayerId } from "@paradox/simulation";
 import type { VisualTheme } from "../theme";
+import { arenaPointToPercent, coordToArenaPoint } from "./arenaGeometry";
 
 interface Props {
   state: GameState;
@@ -14,13 +15,6 @@ interface BotProps {
   horizontalOffset: number;
   reducedMotion: boolean;
 }
-
-const VIRTUAL_WIDTH = 560;
-const VIRTUAL_HEIGHT = 1025;
-const TILE_WIDTH = 86;
-const TILE_HEIGHT = 166;
-const ORIGIN_X = VIRTUAL_WIDTH / 2;
-const ORIGIN_Y = 174;
 
 const BOT_ASSETS: Record<PlayerId, string> = {
   p1: "/assets/player-bot-v2.png",
@@ -78,6 +72,8 @@ function ArenaBot({ id, position, horizontalOffset, reducedMotion }: BotProps) {
     const deltaX = ((start.left - end.left) / 100) * stageBounds.width;
     const deltaY = ((start.top - end.top) / 100) * stageBounds.height;
     flight.getAnimations().forEach((animation) => animation.cancel());
+    bodyRef.current?.getAnimations().forEach((animation) => animation.cancel());
+    impactRef.current?.getAnimations().forEach((animation) => animation.cancel());
 
     if (!moved) {
       flight.animate(
@@ -123,21 +119,19 @@ function ArenaBot({ id, position, horizontalOffset, reducedMotion }: BotProps) {
 
     flight.animate(flightFrames, {
       duration,
-      easing: "linear"
+      easing: "linear",
+      fill: "both"
     });
 
     bodyRef.current?.animate(
       [
-        { offset: 0, transform: "translateY(0) scale(1, 1)" },
-        { offset: 0.08, transform: "translateY(3%) scale(1.12, .8)" },
-        { offset: 0.15, transform: "translateY(-4%) scale(.9, 1.14)" },
-        { offset: 0.48, transform: "translateY(-2%) scale(.96, 1.06)" },
-        { offset: 0.76, transform: "translateY(0) scale(1.02, .98)" },
-        { offset: landing, transform: "translateY(4%) scale(1.18, .76)" },
-        { offset: 0.92, transform: "translateY(-4%) scale(.94, 1.09)" },
-        { offset: 1, transform: "translateY(0) scale(1, 1)" }
+        { offset: 0, transform: "translateY(0) scale(1)" },
+        { offset: 0.12, transform: "translateY(-3%) scale(1)" },
+        { offset: 0.58, transform: "translateY(-2%) scale(1)" },
+        { offset: landing, transform: "translateY(1.5%) scale(1)" },
+        { offset: 1, transform: "translateY(0) scale(1)" }
       ],
-      { duration, easing: "linear" }
+      { duration, easing: "linear", fill: "both" }
     );
 
     impactRef.current?.animate(
@@ -172,11 +166,11 @@ function ArenaBot({ id, position, horizontalOffset, reducedMotion }: BotProps) {
 }
 
 function coordToPercent(coord: Coord, horizontalOffset: number) {
-  const x = ORIGIN_X + (coord.col - 2) * TILE_WIDTH;
-  const y = ORIGIN_Y + coord.row * TILE_HEIGHT;
+  const point = coordToArenaPoint(coord);
+  const percent = arenaPointToPercent(point);
   return {
-    left: (x / VIRTUAL_WIDTH) * 100 + horizontalOffset,
-    top: (y / VIRTUAL_HEIGHT) * 100
+    left: percent.left + horizontalOffset,
+    top: percent.top
   };
 }
 

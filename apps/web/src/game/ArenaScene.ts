@@ -1,24 +1,14 @@
 import Phaser from "phaser";
 import {
   FAMILY_COLORS,
+  GRID_SIZE,
   NODE_DEFINITIONS,
   sameCoord,
   type Coord,
   type GameState
 } from "@paradox/simulation";
 import type { VisualTheme } from "../theme";
-
-const CANVAS_WIDTH = 560;
-const CANVAS_HEIGHT = 1025;
-const TILE_WIDTH = 86;
-const TILE_HEIGHT = 166;
-const ORIGIN_X = CANVAS_WIDTH / 2;
-const ORIGIN_Y = 174;
-
-interface ArenaPoint {
-  x: number;
-  y: number;
-}
+import { ARENA_VIEWPORT, coordToArenaCell, type ArenaCellShape, type ArenaPoint } from "./arenaGeometry";
 
 interface PowerTileStyle {
   color: number;
@@ -88,33 +78,40 @@ export class ArenaScene extends Phaser.Scene {
     this.drawEdgeShading();
 
     for (const cell of this.state.cells) {
-      const center = coordToArena(cell.coord);
-      const index = cell.coord.row * 5 + cell.coord.col;
+      const shape = coordToArenaCell(cell.coord);
+      const center = shape.center;
+      const index = cell.coord.row * GRID_SIZE + cell.coord.col;
       const definition = NODE_DEFINITIONS[cell.node];
       const familyColor = FAMILY_COLORS[definition.family];
       const legal = !cell.void && cell.cooldown === 0;
       const selected = Boolean(this.selected && sameCoord(this.selected, cell.coord));
       const powerStyle = POWER_TILES[index];
       const graphic = this.add.graphics();
-      const left = center.x - TILE_WIDTH / 2 + 3;
-      const top = center.y - TILE_HEIGHT / 2 + 3;
 
-      // The 25 logical cells cover the complete inner floor. Their restrained
-      // outline keeps the detailed steel texture visible while making every
-      // valid destination immediately understandable.
-      graphic.fillStyle(legal ? 0x2e9bc7 : 0x26313e, legal ? 0.025 : 0.035);
-      graphic.fillRoundedRect(left, top, TILE_WIDTH - 6, TILE_HEIGHT - 6, 5);
+      // The logical grid is projected onto the trapezoid floor so every strip
+      // of the arena remains covered by a selectable cell.
+      graphic.fillStyle(
+        selected ? 0x46d9ff : legal ? 0x2e9bc7 : 0x26313e,
+        selected ? 0.34 : legal ? 0.025 : 0.035
+      );
+      graphic.fillPoints(shape.points, true);
       graphic.lineStyle(
-        selected ? 3 : 1,
+        selected ? 4 : 1,
         selected ? 0x79e7ff : legal ? 0x7194ad : 0x47515d,
         selected ? 0.96 : legal ? 0.27 : 0.14
       );
-      graphic.strokeRoundedRect(left, top, TILE_WIDTH - 6, TILE_HEIGHT - 6, 5);
+      graphic.strokePoints(shape.points, true, true);
+
+      if (selected) {
+        graphic.lineStyle(2, 0xecfbff, 0.72);
+        graphic.strokePoints(insetCellPoints(shape, 6), true, true);
+      }
 
       if (!cell.void && (powerStyle || selected || cell.warned)) {
         drawPowerTile(
           graphic,
           center,
+          shape,
           powerStyle ?? { color: familyColor, glyph: familyGlyph(definition.family) },
           legal,
           selected
@@ -133,13 +130,13 @@ export class ArenaScene extends Phaser.Scene {
       if (legal) {
         const hover = this.add.graphics();
         hover.fillStyle(0x51cfff, 0.13);
-        hover.fillRoundedRect(left + 2, top + 2, TILE_WIDTH - 10, TILE_HEIGHT - 10, 5);
+        hover.fillPoints(shape.points, true);
         hover.lineStyle(2, 0x72e5ff, 0.76);
-        hover.strokeRoundedRect(left + 2, top + 2, TILE_WIDTH - 10, TILE_HEIGHT - 10, 5);
+        hover.strokePoints(shape.points, true, true);
         hover.setAlpha(0.001);
         hover.setInteractive(
-          new Phaser.Geom.Rectangle(left, top, TILE_WIDTH - 6, TILE_HEIGHT - 6),
-          Phaser.Geom.Rectangle.Contains
+          new Phaser.Geom.Polygon(shape.points),
+          Phaser.Geom.Polygon.Contains
         );
         hover.on("pointerdown", () => this.selectionHandler?.({ ...cell.coord }));
         hover.on("pointerover", () => hover.setAlpha(1));
@@ -148,13 +145,18 @@ export class ArenaScene extends Phaser.Scene {
       }
 
       if (!cell.void && cell.cooldown > 0) {
+        const badgeCenter = topRightBadgePosition(shape);
+        const badgeWidth = 27;
+        const badgeHeight = 23;
+        const badgeLeft = badgeCenter.x - badgeWidth / 2;
+        const badgeTop = badgeCenter.y - badgeHeight / 2;
         const badge = this.add.graphics();
         badge.fillStyle(0x06101b, 0.96);
-        badge.fillRoundedRect(center.x + 23, center.y - 39, 27, 23, 6);
+        badge.fillRoundedRect(badgeLeft, badgeTop, badgeWidth, badgeHeight, 6);
         badge.lineStyle(1, familyColor, 0.9);
-        badge.strokeRoundedRect(center.x + 23, center.y - 39, 27, 23, 6);
+        badge.strokeRoundedRect(badgeLeft, badgeTop, badgeWidth, badgeHeight, 6);
         const cooldown = this.add
-          .text(center.x + 36.5, center.y - 27.5, String(cell.cooldown), {
+          .text(badgeCenter.x, badgeCenter.y, String(cell.cooldown), {
             fontFamily: "Chakra Petch, Arial, sans-serif",
             fontSize: "12px",
             fontStyle: "bold",
@@ -170,18 +172,11 @@ export class ArenaScene extends Phaser.Scene {
     if (!this.board) return;
     const shading = this.add.graphics();
     shading.fillStyle(0x01050a, 0.28);
-    shading.fillRect(0, 0, CANVAS_WIDTH, 74);
+    shading.fillRect(0, 0, ARENA_VIEWPORT.width, 74);
     shading.fillStyle(0x01050a, 0.18);
-    shading.fillRect(0, 938, CANVAS_WIDTH, CANVAS_HEIGHT - 938);
+    shading.fillRect(0, 938, ARENA_VIEWPORT.width, ARENA_VIEWPORT.height - 938);
     this.board.add(shading);
   }
-}
-
-function coordToArena(coord: Coord): ArenaPoint {
-  return {
-    x: ORIGIN_X + (coord.col - 2) * TILE_WIDTH,
-    y: ORIGIN_Y + coord.row * TILE_HEIGHT
-  };
 }
 
 function familyGlyph(
@@ -196,24 +191,31 @@ function familyGlyph(
 function drawPowerTile(
   graphic: Phaser.GameObjects.Graphics,
   center: ArenaPoint,
+  shape: ArenaCellShape,
   style: PowerTileStyle,
   legal: boolean,
   selected: boolean
 ): void {
   const alpha = legal ? 1 : 0.34;
-  const size = selected ? 78 : 70;
-  const half = size / 2;
+  const selectedColor = 0x46d9ff;
+  const narrowestWidth = Math.min(
+    distance(shape.topLeft, shape.topRight),
+    distance(shape.bottomLeft, shape.bottomRight)
+  );
+  const overlayColor = selected ? selectedColor : style.color;
+  const overlayAlpha = selected ? 0.3 : 0.12;
+  const borderAlpha = selected ? 0.98 : 0.72;
+  const innerBorderAlpha = selected ? 0.64 : 0.26;
+  const innerPoints = insetCellPoints(shape, selected ? 7 : 8);
+  const glyphScale = Math.min(1.28, Math.max(0.86, narrowestWidth / 76));
 
-  graphic.fillStyle(style.color, 0.055 * alpha);
-  graphic.fillRoundedRect(center.x - half - 8, center.y - half - 8, size + 16, size + 16, 12);
-  graphic.fillStyle(style.color, 0.12 * alpha);
-  graphic.fillRoundedRect(center.x - half, center.y - half, size, size, 7);
-  graphic.lineStyle(selected ? 4 : 2, style.color, (selected ? 1 : 0.82) * alpha);
-  graphic.strokeRoundedRect(center.x - half, center.y - half, size, size, 7);
-  graphic.lineStyle(1, 0xdff8ff, 0.3 * alpha);
-  graphic.strokeRoundedRect(center.x - half + 4, center.y - half + 4, size - 8, size - 8, 5);
-
-  drawPowerGlyph(graphic, style.glyph, center, style.color, alpha);
+  graphic.fillStyle(overlayColor, overlayAlpha * alpha);
+  graphic.fillPoints(shape.points, true);
+  graphic.lineStyle(selected ? 4 : 2, overlayColor, borderAlpha * alpha);
+  graphic.strokePoints(shape.points, true, true);
+  graphic.lineStyle(1, 0xdff8ff, innerBorderAlpha * alpha);
+  graphic.strokePoints(innerPoints, true, true);
+  drawPowerGlyph(graphic, style.glyph, center, overlayColor, alpha, glyphScale);
 }
 
 function drawPowerGlyph(
@@ -221,52 +223,53 @@ function drawPowerGlyph(
   glyph: PowerTileStyle["glyph"],
   center: ArenaPoint,
   color: number,
-  alpha: number
+  alpha: number,
+  scale: number
 ): void {
   graphic.fillStyle(color, 0.95 * alpha);
-  graphic.lineStyle(5, color, 0.95 * alpha);
+  graphic.lineStyle(Math.max(3, 5 * scale), color, 0.95 * alpha);
 
   if (glyph === "arrow") {
-    graphic.fillRect(center.x - 5, center.y - 22, 10, 29);
+    graphic.fillRect(center.x - 5 * scale, center.y - 22 * scale, 10 * scale, 29 * scale);
     graphic.fillTriangle(
-      center.x - 18,
-      center.y + 2,
-      center.x + 18,
-      center.y + 2,
+      center.x - 18 * scale,
+      center.y + 2 * scale,
+      center.x + 18 * scale,
+      center.y + 2 * scale,
       center.x,
-      center.y + 23
+      center.y + 23 * scale
     );
     return;
   }
 
   if (glyph === "bolt") {
     graphic.fillPoints([
-      { x: center.x + 4, y: center.y - 27 },
-      { x: center.x - 17, y: center.y + 1 },
-      { x: center.x - 4, y: center.y + 1 },
-      { x: center.x - 10, y: center.y + 27 },
-      { x: center.x + 19, y: center.y - 8 },
-      { x: center.x + 5, y: center.y - 8 }
+      { x: center.x + 4 * scale, y: center.y - 27 * scale },
+      { x: center.x - 17 * scale, y: center.y + 1 * scale },
+      { x: center.x - 4 * scale, y: center.y + 1 * scale },
+      { x: center.x - 10 * scale, y: center.y + 27 * scale },
+      { x: center.x + 19 * scale, y: center.y - 8 * scale },
+      { x: center.x + 5 * scale, y: center.y - 8 * scale }
     ], true);
     return;
   }
 
   if (glyph === "shield") {
-    graphic.lineStyle(5, color, 0.95 * alpha);
+    graphic.lineStyle(Math.max(3, 5 * scale), color, 0.95 * alpha);
     graphic.strokePoints([
-      { x: center.x, y: center.y - 25 },
-      { x: center.x + 20, y: center.y - 14 },
-      { x: center.x + 16, y: center.y + 13 },
-      { x: center.x, y: center.y + 26 },
-      { x: center.x - 16, y: center.y + 13 },
-      { x: center.x - 20, y: center.y - 14 }
+      { x: center.x, y: center.y - 25 * scale },
+      { x: center.x + 20 * scale, y: center.y - 14 * scale },
+      { x: center.x + 16 * scale, y: center.y + 13 * scale },
+      { x: center.x, y: center.y + 26 * scale },
+      { x: center.x - 16 * scale, y: center.y + 13 * scale },
+      { x: center.x - 20 * scale, y: center.y - 14 * scale }
     ], true);
     return;
   }
 
   const points: ArenaPoint[] = [];
   for (let index = 0; index < 16; index += 1) {
-    const radius = index % 2 === 0 ? 25 : 9;
+    const radius = (index % 2 === 0 ? 25 : 9) * scale;
     const angle = -Math.PI / 2 + (Math.PI * index) / 8;
     points.push({
       x: center.x + Math.cos(angle) * radius,
@@ -275,5 +278,34 @@ function drawPowerGlyph(
   }
   graphic.fillPoints(points, true);
   graphic.fillStyle(0xeafcff, 0.8 * alpha);
-  graphic.fillCircle(center.x, center.y, 5);
+  graphic.fillCircle(center.x, center.y, 5 * scale);
+}
+
+function distance(a: ArenaPoint, b: ArenaPoint): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function topRightBadgePosition(shape: ArenaCellShape): ArenaPoint {
+  const inward = unitVector(shape.topRight, shape.topLeft);
+  const downward = unitVector(shape.topRight, shape.bottomRight);
+  return {
+    x: shape.topRight.x + inward.x * 20 + downward.x * 17,
+    y: shape.topRight.y + inward.y * 20 + downward.y * 17
+  };
+}
+
+function insetCellPoints(shape: ArenaCellShape, amount: number): ArenaPoint[] {
+  return shape.points.map((point) => ({
+    x: point.x + (shape.center.x - point.x) * (amount / Math.max(amount, distance(point, shape.center))),
+    y: point.y + (shape.center.y - point.y) * (amount / Math.max(amount, distance(point, shape.center)))
+  }));
+}
+
+function unitVector(from: ArenaPoint, to: ArenaPoint): ArenaPoint {
+  const length = distance(from, to);
+  if (length === 0) return { x: 0, y: 0 };
+  return {
+    x: (to.x - from.x) / length,
+    y: (to.y - from.y) / length
+  };
 }

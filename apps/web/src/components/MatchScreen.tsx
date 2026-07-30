@@ -276,8 +276,8 @@ function BattleScorebar({
   const timer = phase === "selecting"
     ? `00:${String(Math.max(0, Math.ceil(remaining / 1000))).padStart(2, "0")}`
     : "SYNC";
-  const playerScore = Math.ceil(player.integrity / 4);
-  const rivalScore = Math.ceil(rival.integrity / 4);
+  const playerScore = player.integrity;
+  const rivalScore = rival.integrity;
   return (
     <div className="battle-scorebar" aria-hidden="true">
       <div className="battle-score player-score">
@@ -329,7 +329,7 @@ function PlayerPanel({
   return (
     <aside className={`player-panel ${side}`}>
       <div className="player-label">
-        <span className="avatar-chip">{side === "player" ? "P1" : "K7"}</span>
+        <span className="avatar-chip" aria-hidden="true" />
         <div><small>{side === "player" ? t("match.localAvatar") : t("match.tacticalUnit")}</small><strong>{name}</strong></div>
         <b>{state.integrity}</b>
       </div>
